@@ -1,0 +1,130 @@
+---
+title: "Iman Bahmani' Reports"
+output: html_notebook
+---
+
+Load the data
+
+```{r}
+setwd(dir="/Users/iman/Dropbox/Coursera/test_sent")
+library(datetime)
+library(gdata)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(MLmetrics)
+#######################
+h<- function(x){head(x)}
+l<- function(y){length(y)}
+u<- function(z){unique(z)}
+dst=read.csv2(file = "store_master.csv")
+ds=read.csv2(file = "sales_data.csv")
+ds$date<- as.Date(ds$date, format = "%Y-%m-%d")
+ds=ds[order(ds$date),]
+h(ds)
+items=sort(unique(ds$item))
+stores=sort(unique(ds$store))
+##################################
+fs = sample(stores,1)
+fs =54
+print(paste0("Current store is: ", fs))
+fsi = sort(unique(ds[ds$store==fs,]$item))
+cat("the availabe items in the store ",fs, " are:",fsi,fill=TRUE)
+storeitems = c()
+storevales = c()
+for (i in c(1:l(fsi)) ){  
+  fi = fsi[i]
+  storeitems = append(storeitems,fi)
+  #print(paste0("Current item is: ", fi))
+  df = ds[(ds$store==fs) & (ds$item==fi),];
+  h(df)
+  dates = seq(as.Date(min(df$date)), as.Date(max(df$date)), "days")
+  vals = c()
+  for (day in dates){
+    vals=append(vals,sum(df[df$date==day,]$qty))
+  }
+  storevales = append(storevales,sum(vals))
+  #print(paste0("sums of the item ",fi ," which was sold in the store ",fs," is = ",sum(vals)))
+  data=data.frame("qty"=vals, "date"=dates)
+   print(ggplot(data, aes(x=date, y=qty)) +
+    geom_line(color="steelblue") +  xlab("Days") + ylab("Quantity of sold item")+
+    theme_bw() +
+    scale_x_date(labels = date_format("%d-%m-%Y"))+
+    ggtitle(paste0("Item ",fsi[i]," sold in the store ",fs," is = ",sum(vals)),"Plot of sales over the last 30 days")
+    )
+
+}
+```
+
+```{r}
+data1=data.frame("item"=storeitems,"sold"=storevales)
+data1=data1[order(data1$sold),]
+cat("We achived the minimum and maximum sales in stores", data1[data1$sold==min(data1$sold),]$item,"and ",data1[data1$sold==max(data1$sold),]$item,", respectively",min(data1$sold),"and", max(data1$sold) )
+
+```
+
+Here is a full picture of sales in the current store:
+
+```{r}
+qplot(x = item, y = sold, data = data1, label =item, 
+      geom=c("point", "text"),
+      hjust=0, vjust=0)
+```
+
+In the following, given a sales of 30 days in a specific store, we build a model in order to predict sales for the next 30 days.
+
+```{r}
+for (i in c(1:l(fsi)) ){  
+  fi = fsi[i]
+  df = ds[(ds$store==fs) & (ds$item==fi),];
+  dates = seq(as.Date(min(df$date)), as.Date(max(df$date)), "days")
+  vals = c()
+  for (day in dates){
+    vals=append(vals,sum(df[df$date==day,]$qty))
+  }
+  vals
+  data=data.frame("qty"=vals, "date"=dates)
+  if(l(vals)>=60){
+  X = list()
+  Y = list()
+  tstart = 1
+  while (tstart <= length(vals)-59 ){
+    X[[tstart]]<-vals[c(tstart:(tstart+29))];
+    Y[[tstart]]<-vals[c((tstart+30):(tstart+59))]
+    tstart = tstart + 1
+  }
+  
+  
+  X = matrix(unlist(X), nrow=length(X), byrow=T)
+  Y = matrix(unlist(Y), nrow=length(Y), byrow=T)
+  FX<- data.frame(X)
+  FY<- data.frame(Y)
+  names(FY) <- c("Y1","Y2","Y3","Y4","Y5","Y6","Y7","Y8","Y9","Y10" 
+                 ,"Y11", "Y12" ,"Y13" ,"Y14" ,"Y15", "Y16", "Y17", "Y18" 
+                 ,"Y19", "Y20", "Y21" ,"Y22" ,"Y23", "Y24","Y25", "Y26", 
+                 "Y27", "Y28", "Y29" ,"Y30")
+  
+  XY=cbind(FX,FY)
+  reg=lm(cbind(Y1,Y2,Y3,Y4,Y5,Y6,Y7,Y8,Y9,Y10,Y11,Y12,Y13,Y14,Y15,Y16,Y17,
+               Y18,Y19,Y20,Y21,Y22,Y23,Y24,Y25,Y26,Y27,Y28,Y29,Y30)~X1+X2+X3+X4+X5+X6+X7
+         +X8+X9+X10+X11+X12+X13+X14+X15+X16+X17+
+           X18+X19+X20+X21+X22+X23+X24+X25+X26+X27+X28+X29+X30, data = XY)
+  Pred=c()
+  j=1
+  while (j<=nrow(FX)){
+    Pred=c(Pred,c(predict(reg,FX[j,])))
+    j=j+30
+  }
+  print( ggplot() + geom_line(aes(x=data$date,y=data$qty),color="steelblue") + 
+    geom_line(aes(x=data[c(31:(l(Pred)+30)),]$date,y=Pred),color='red') + 
+      xlab("Days") + ylab("qty of sold item")+
+      theme_bw() +
+      scale_x_date(labels = date_format("%d-%m-%Y"))+
+      ggtitle(paste0("Item ",fsi[i]," sold in the store ",fs," is = ",sum(vals)),"Blue: Plot of sales over the last 30 days and Red: Plot of predicted sales over the last 30 days")
+    #ggtitle(paste0("item ",fsi[i]," in store ",fs))
+  )
+  print(paste0("the mean abs value and the mean sqaured error for the item ",fsi[i]," in the store ",fs, 
+      " are ", mean(abs((predict(reg,FX)-Y)))," and ",MSE(predict(reg,FX),Y), " respectively."))
+  }
+}
+```
